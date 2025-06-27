@@ -1,0 +1,58 @@
+# constants.py
+import textwrap
+from enum import IntEnum
+
+# Conversation States
+class States(IntEnum):
+    NAME = 1
+    ADDRESS = 2
+    POSTAL = 3
+    PHONE = 4
+    NOTES = 5
+
+# Categories
+CATEGORIES = {
+    "rice": "🍚 برنج / Riso",
+    "beans": "🥣 حبوبات / Legumi",
+    "spice": "🌿 ادویه / Spezie",
+    "nuts": "🥜 خشکبار / Frutta secca",
+    "drink": "🧃 نوشیدنی / Bevande",
+    "canned": "🥫 کنسرو / Conserve",
+}
+
+# Products
+PRODUCTS = {
+    "rice_hashemi": {
+        "cat": "rice",
+        "fa": "برنج هاشمی",
+        "it": "Riso Hashemi",
+        "desc": "عطر بالا / Profumato",
+        "weight": "1 kg",
+        "price": "6",  # in EUR
+        "img": "https://i.imgur.com/paddy.jpg",
+    },
+    "bean_lentil": {
+        "cat": "beans",
+        "fa": "عدس",
+        "it": "Lenticchie",
+        "desc": "عدس سبز / Lenticchie verdi",
+        "weight": "1 kg",
+        "price": "4",
+        "img": "https://i.imgur.com/lentil.jpg",
+    },
+}
+
+# Texts
+WELCOME = textwrap.dedent(
+    """
+    🍇 به بازارینو خوش آمدید! 🇮🇷🇮🇹
+    Benvenuto in Bazarino!
+    🏠 فروشگاه ایرانی‌های پروجا
+
+    👇 لطفاً یک دسته را انتخاب کنید:
+    """
+)
+ABOUT = "بازارینو توسط دانشجویان ایرانی در پروجا اداره می‌شود."
+PRIVACY = "حریم‌خصوصی شما برای ما مقدس است؛ داده‌ها فقط جهت پردازش سفارش استفاده می‌شوند."
+CANCEL_MESSAGE = "❌ سفارش لغو شد. برای شروع دوباره /start را بزنید."
+ERROR_MESSAGE = "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."

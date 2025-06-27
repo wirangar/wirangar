@@ -1,0 +1,168 @@
+# handlers.py
+import datetime
+import logging
+from telegram import Update, ReplyKeyboardRemove, LabeledPrice
+from telegram.ext import ContextTypes, ConversationHandler
+from constants import (
+    States, WELCOME, ABOUT, PRIVACY, PRODUCTS, CATEGORIES, CANCEL_MESSAGE, ERROR_MESSAGE
+)
+from keyboards import kb_main, kb_category, kb_product
+from sheets import save_order_to_sheet
+
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(WELCOME, reply_markup=kb_main(), disable_web_page_preview=True)
+    return None
+
+async def about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(ABOUT)
+
+async def privacy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(PRIVACY)
+
+async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data.clear()
+    await update.message.reply_text(CANCEL_MESSAGE, reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
+async def router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    data = q.data
+
+    try:
+        if data == "back_main":
+            await q.edit_message_text(WELCOME, reply_markup=kb_main(), disable_web_page_preview=True)
+            return
+
+        if data.startswith("back_"):
+            cat = data.split("_", 1)[1]
+            if cat not in CATEGORIES:
+                await q.message.reply_text(ERROR_MESSAGE)
+                return
+            await q.edit_message_text(CATEGORIES[cat], reply_markup=kb_category(cat))
+            return
+
+        if data.startswith("cat_"):
+            cat = data.split("_", 1)[1]
+            if cat not in CATEGORIES:
+                await q.message.reply_text(ERROR_MESSAGE)
+                return
+            await q.edit_message_text(CATEGORIES[cat], reply_markup=kb_category(cat))
+            return
+
+        if data.startswith("prd_"):
+            code = data.split("_", 1)[1]
+            if code not in PRODUCTS:
+                await q.message.reply_text("محصول یافت نشد!")
+                return
+            p = PRODUCTS[code]
+            caption = f"<b>{p['fa']} / {p['it']}</b>\n{p['desc']}\nوزن: {p['weight']}\nقیمت: €{p['price']}"
+            await q.message.delete()
+            await q.message.chat.send_photo(
+                photo=p["img"], caption=caption, parse_mode="HTML", reply_markup=kb_product(code)
+            )
+            return
+
+        if data.startswith(("ordP_", "ordI_")):
+            ctx.user_data.clear()
+            ctx.user_data["product_code"] = data.split("_", 1)[1]
+            ctx.user_data["dest"] = "Perugia" if data.startswith("ordP_") else "Italia"
+            await q.message.reply_text("👤 لطفاً نام و نام خانوادگی خود را به صورت کامل وارد کنید:")
+            return States.NAME
+
+    except Exception as e:
+        logging.error(f"Router error: {e}")
+        await q.message.reply_text(ERROR_MESSAGE)
+
+async def step_name(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data["name"] = update.message.text.strip()
+    await update.message.reply_text("📍 لطفاً آدرس خود را وارد کنید:")
+    return States.ADDRESS
+
+async def step_address(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data["address"] = update.message.text.strip()
+    if ctx.user_data["dest"] == "Italia":
+        await update.message.reply_text("🔢 لطفاً کد پستی (۵ رقم) را وارد کنید:")
+        return States.POSTAL
+    await update.message.reply_text("☎️ لطفاً شماره تلفن خود را وارد کنید:")
+    return States.PHONE
+
+async def step_postal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    postal = update.message.text.strip()
+    if not postal.isdigit() or len(postal) != 5:
+        await update.message.reply_text("لطفاً کد پستی معتبر (۵ رقم) وارد کنید:")
+        return States.POSTAL
+    ctx.user_data["postal"] = postal
+    await update.message.reply_text("☎️ لطفاً شماره تلفن خود را وارد کنید:")
+    return States.PHONE
+
+async def step_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    phone = update.message.text.strip()
+    ctx.user_data["phone"] = phone
+    await update.message.reply_text("📝 هرگونه یادداشت یا توضیحات اضافی (اختیاری):")
+    return States.NOTES
+
+async def step_notes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    ctx.user_data["notes"] = update.message.text.strip()
+    user_data = ctx.user_data
+    p = PRODUCTS[user_data["product_code"]]
+
+    if user_data["dest"] == "Italia":
+        amount_cents = int(float(p["price"]) * 100)
+        try:
+            await update.message.reply_invoice(
+                title=f"سفارش {p['fa']}",
+                description=p["desc"],
+                payload="order-payload",
+                provider_token=os.environ.get("PAYMENT_PROVIDER_TOKEN"),
+                currency="EUR",
+                prices=[LabeledPrice(label=p["fa"], amount=amount_cents)],
+            )
+            return ConversationHandler.END
+        except Exception as e:
+            logging.error(f"Invoice error: {e}")
+            await update.message.reply_text(ERROR_MESSAGE)
+            return ConversationHandler.END
+
+    await save_order(update, ctx)
+    return ConversationHandler.END
+
+async def save_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_data = ctx.user_data
+    p = PRODUCTS[user_data["product_code"]]
+    order = {
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "name": user_data.get("name", ""),
+        "address": user_data.get("address", ""),
+        "postal": user_data.get("postal", ""),
+        "phone": user_data.get("phone", ""),
+        "notes": user_data.get("notes", ""),
+        "product": f"{p['fa']} / {p['it']}",
+        "destination": user_data["dest"],
+        "price": p["price"],
+    }
+    try:
+        save_order_to_sheet(order)
+        await update.message.reply_text("✅ سفارش شما ثبت شد! به‌زودی با شما تماس می‌گیریم.")
+        admin_msg = "\n".join(f"{k}: {v}" for k, v in order.items())
+        await ctx.bot.send_message(int(os.getenv("ADMIN_CHAT_ID", "0")), f"سفارش جدید:\n{admin_msg}")
+    except Exception as e:
+        logging.error(f"Save order error: {e}")
+        await update.message.reply_text(ERROR_MESSAGE)
+
+async def precheckout(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.pre_checkout_query
+    try:
+        await query.answer(ok=True)
+    except Exception as e:
+        logging.error(f"Precheckout error: {e}")
+        await query.answer(ok=False, error_message="خطا در بررسی پرداخت. لطفاً دوباره تلاش کنید.")
+
+async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_data = ctx.user_data
+    try:
+        await save_order(update, ctx)
+        await update.message.reply_text("💳 پرداخت با موفقیت انجام شد و سفارش ثبت شد!")
+    except Exception as e:
+        logging.error(f"Payment error: {e}")
+        await update.message.reply_text(ERROR_MESSAGE)

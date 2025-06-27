@@ -1,0 +1,26 @@
+# keyboards.py
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from constants import CATEGORIES, PRODUCTS
+
+def kb_main() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(lbl, callback_data=f"cat_{key}")] for key, lbl in CATEGORIES.items()]
+    )
+
+def kb_category(cat: str) -> InlineKeyboardMarkup:
+    btns = [
+        [InlineKeyboardButton(f"{p['fa']} / {p['it']}", callback_data=f"prd_{code}")]
+        for code, p in PRODUCTS.items()
+        if p["cat"] == cat
+    ]
+    btns.append([InlineKeyboardButton("⬅️ بازگشت", callback_data="back_main")])
+    return InlineKeyboardMarkup(btns)
+
+def kb_product(code: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🛒 سفارش پروجا", callback_data=f"ordP_{code}")],
+            [InlineKeyboardButton("📦 سفارش ایتالیا (پرداخت)", callback_data=f"ordI_{code}")],
+            [InlineKeyboardButton("⬅️ بازگشت", callback_data=f"back_{PRODUCTS[code]['cat']}")],
+        ]
+    )

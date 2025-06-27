@@ -1,0 +1,37 @@
+# sheets.py
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import os
+import logging
+
+# Setup logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    handlers=[logging.FileHandler("bot.log"), logging.StreamHandler()],
+)
+
+CREDS_PATH = os.environ["GOOGLE_CREDS"]
+SHEET_NAME = "Bazarnio Orders"
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive",
+]
+
+def get_sheet():
+    try:
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDS_PATH, scope)
+        client = gspread.authorize(creds)
+        return client.open(SHEET_NAME).sheet1
+    except Exception as e:
+        logging.error(f"Failed to connect to Google Sheets: {e}")
+        raise
+
+def save_order_to_sheet(order: dict):
+    try:
+        sheet = get_sheet()
+        sheet.append_row(list(order.values()))
+        logging.info(f"Order saved: {order}")
+    except Exception as e:
+        logging.error(f"Failed to save order to Google Sheets: {e}")
+        raise
